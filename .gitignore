@@ -1,0 +1,13 @@
+*.pyc
+
+.idea/
+
+*.txt
+*.json
+
+spark_ops/**
+
+pyspark/**
+
+sample.py
+
