@@ -1,4 +1,5 @@
 import sys
+import math as m
 
 import pyspark as ps
 
@@ -46,7 +47,7 @@ hadoop_valuevalue_format = 'org.apache.hadoop.io.IntWritable'
 hadoop_textinput_format = 'org.apache.hadoop.mapred.TextInputFormat'
 
 
-def concat_word_count_lists(sc, rdd_list):
+def compute_bayes_components(sc, rdd_list):
     # pos_wordct_rdd = sc.pickleFile(input_file_path.split(":")[0])#, hadoop_textinput_format,
     # hadoop_keyvalue_format, hadoop_valuevalue_format)
     pos_wordct_rdd = rdd_list[0]
@@ -59,21 +60,33 @@ def concat_word_count_lists(sc, rdd_list):
     pos_zeroed_rdd = pos_wordct_rdd.mapValues(lambda val: 0)
     print
     "NEGATIVE FIRST  ZEROED %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" + str(neg_zeroed_rdd.first())
+    # Append pos and neg word lists with their counterparts' "zeroed" values
     pos_unioned_rdd = sc.union([pos_wordct_rdd, neg_zeroed_rdd])
     neg_unioned_rdd = sc.union([neg_wordct_rdd, pos_zeroed_rdd])
     print
     "NEGATIVE FIRST UNIONED %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" + str(neg_unioned_rdd.first())
 
-    pos_smoothed_rdd = pos_unioned_rdd.reduceByKey(lambda a, b: a + b, numPartitions=1)
-    neg_smoothed_rdd = neg_unioned_rdd.reduceByKey(lambda a, b: a + b, numPartitions=1)
+    # Throw away any word same as the one in the main word list. The counterpart words have a 0 as the count
+    # so reducing is gonna combine the two keys to the effect of "throwing" away duplicates
+    pos_uniq_combined_rdd = pos_unioned_rdd.reduceByKey(lambda a, b: a + b, numPartitions=1)
+    neg_uniq_combined_rdd = neg_unioned_rdd.reduceByKey(lambda a, b: a + b, numPartitions=1)
     print
-    "NEGATIVE FIRST SMOOTHED %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" + str(neg_smoothed_rdd.first())
+    "NEGATIVE FIRST SMOOTHED %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" + str(neg_uniq_combined_rdd.first())
 
-    # print " %%%%%%%%%%%%%%%%%%%"+str(pos_smoothed_rdd.first())+"%%%%%%%%%%%%%%%%%%%%%"
-    # print " %%%%%%%%%%%%%%%%%%%"+str(type(pos_smoothed_rdd.first()))+"%%%%%%%%%%%%%%%%%%%%%"
+    # increment the combined lists by 1 to support smoothing of naive Bayes
+    inc_smooth_pos_rdd = pos_uniq_combined_rdd.mapValues(lambda val: val + 1)
+    inc_smooth_neg_rdd = neg_uniq_combined_rdd.mapValues(lambda val: val + 1)
 
-    pos_smoothed_rdd.saveAsTextFile(output_file_path.split(":")[0])  # , 'org.apache.hadoop.mapred.TextOutputFormat')
-    neg_smoothed_rdd.saveAsTextFile(output_file_path.split(":")[1])  # , 'org.apache.hadoop.mapred.TextOutputFormat')
+    # get the total counts for each list to use in calculating the probabilities in naive bayes
+    count_negative = inc_smooth_neg_rdd.map(lambda val: ('Key', val[1])).reduceByKey(lambda a, b: a + b).collect()[0]
+    count_positive = inc_smooth_pos_rdd.map(lambda val: ('Key', val[1])).reduceByKey(lambda a, b: a + b).collect()[0]
+
+    # create the naive bays probability values for each term in the list
+    naive_bayes_neg = inc_smooth_neg_rdd.mapValues(lambda val: float(val) / count_negative[1])
+    naive_bayes_pos = inc_smooth_pos_rdd.mapValues(lambda val: float(val) / count_positive[1])
+
+    naive_bayes_pos.saveAsTextFile(output_file_path.split(":")[0])  # , 'org.apache.hadoop.mapred.TextOutputFormat')
+    naive_bayes_neg.saveAsTextFile(output_file_path.split(":")[1])  # , 'org.apache.hadoop.mapred.TextOutputFormat')
 
 
 if __name__ == "__main__":
@@ -83,5 +96,5 @@ if __name__ == "__main__":
     output_file_path = sys.argv[2]
     sc = SparkContext(appName="TweetAggregator")
     rdd_list = build_word_counts(sc)
-    concat_word_count_lists(sc, rdd_list)
+    compute_bayes_components(sc, rdd_list)
     sc.stop()
