@@ -30,7 +30,7 @@ def extractTweetText(list_of_files, fileout):
             for tweet in json_data['twitterdata']:
                 if 'end' not in tweet:
                     tweet_text = tweet['text']
-                    tweet_text = clean_tweet(tweet_text)
+                    tweet_text = tweet_text.replace('\n', ' ').replace('\r', ' ')
                     if tweet_text != '':
                         print(tweet_text, end='\n')
                         print(tweet_text, file=fileout)
@@ -42,20 +42,21 @@ def extractTweetText(list_of_files, fileout):
 
 def main():
     list_of_files = [
-        '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_positive.json',
-        '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread1.json',
-        '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread2.json',
-        '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread3.json',
-        '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread4.json',
-        '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread5.json',
-        '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread6.json',
+        # '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_positive.json',
+        # '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread1.json',
+        # '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread2.json',
+        # '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread3.json',
+        # '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread4.json',
+        # '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread5.json',
+        # '/Users/kishorekolluru/PycharmProjects/cloud_project/raw_tweets_wordpos_thread6.json',
+        '/Users/kishorekolluru/PycharmProjects/cloud_project/donald_trump_tweets.json'
     ]
 
-    clean_tweet_text_filename = 'cleanedtweets.txt'
-    tweet_stopless_file = 'stopwordless_tweets.txt'
+    clean_tweet_text_filename = 'trump_cleanedtweets.txt'
+    tweet_stopless_file = 'trump_stopwordless_tweets.txt'
     fileout = open(clean_tweet_text_filename, mode='w', buffering=2000)
 
-    # extractTweetText(list_of_files, fileout)
+    extractTweetText(list_of_files, fileout)
 
     # remove stop words
     clean_tweet_file = open(clean_tweet_text_filename, mode='r')
@@ -66,6 +67,7 @@ def main():
 
     for line in clean_tweet_file:
         tweet_line_clean = ''
+        line = clean_tweet(line)
         for word in line.lower().split():
             if word not in stop:
                 tweet_line_clean += word + ' '
