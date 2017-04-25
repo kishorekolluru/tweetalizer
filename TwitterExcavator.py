@@ -120,6 +120,7 @@ class MyStreamListener(tweepy.StreamListener):
 
     def on_data(self, raw_data):
         self.counter += 1
+        print(raw_data)
         print("Tweet {} received".format(self.counter))
         json_data = json.loads(raw_data)
         #        print(raw_data)

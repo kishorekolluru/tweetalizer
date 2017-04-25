@@ -6,7 +6,7 @@ import pyspark as ps
 from pyspark import SparkContext
 
 
-def build_word_counts(sc):
+def build_word_counts(sc, input_file_path):
     pos_tweet_file_rdd = sc.textFile(input_file_path.split(":")[0])
     neg_tweet_file_rdd = sc.textFile(input_file_path.split(":")[1])
     # make the list unique
@@ -47,7 +47,7 @@ hadoop_valuevalue_format = 'org.apache.hadoop.io.IntWritable'
 hadoop_textinput_format = 'org.apache.hadoop.mapred.TextInputFormat'
 
 
-def compute_bayes_components(sc, rdd_list):
+def compute_bayes_probabilities(sc, rdd_list):
     # pos_wordct_rdd = sc.pickleFile(input_file_path.split(":")[0])#, hadoop_textinput_format,
     # hadoop_keyvalue_format, hadoop_valuevalue_format)
     pos_wordct_rdd = rdd_list[0]
@@ -85,8 +85,9 @@ def compute_bayes_components(sc, rdd_list):
     naive_bayes_neg = inc_smooth_neg_rdd.mapValues(lambda val: float(val) / count_negative[1])
     naive_bayes_pos = inc_smooth_pos_rdd.mapValues(lambda val: float(val) / count_positive[1])
 
-    naive_bayes_pos.saveAsTextFile(output_file_path.split(":")[0])  # , 'org.apache.hadoop.mapred.TextOutputFormat')
-    naive_bayes_neg.saveAsTextFile(output_file_path.split(":")[1])  # , 'org.apache.hadoop.mapred.TextOutputFormat')
+    # naive_bayes_pos.saveAsTextFile(output_file_path.split(":")[0])  # , 'org.apache.hadoop.mapred.TextOutputFormat')
+    # naive_bayes_neg.saveAsTextFile(output_file_path.split(":")[1])  # , 'org.apache.hadoop.mapred.TextOutputFormat')
+    return [count_positive, count_negative, naive_bayes_pos, naive_bayes_neg]
 
 
 if __name__ == "__main__":
@@ -95,6 +96,6 @@ if __name__ == "__main__":
     input_file_path = sys.argv[1]
     output_file_path = sys.argv[2]
     sc = SparkContext(appName="TweetAggregator")
-    rdd_list = build_word_counts(sc)
-    compute_bayes_components(sc, rdd_list)
+    rdd_list = build_word_counts(sc,input_file_path)
+    compute_bayes_probabilities(sc, rdd_list)
     sc.stop()
