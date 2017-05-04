@@ -1,101 +1,124 @@
+# Group 8
+# Nanda Kishore Kolluru - 800970494
+# Jay Shah - 800326050
+# This file serves to as the main start point for calculating the Bayes Classfication of tweets
+import re
 import sys
-import math as m
 
-import pyspark as ps
-
+from bayes_helper import build_word_counts, compute_bayes_probabilities
 from pyspark import SparkContext
+from nltk.corpus import stopwords
+import math
+
+stop_word_list = set(stopwords.words('english'))
+
+# Cleans the tweet lines and strips off any special chars and stop words
+def clean_tweet(tweet_text):
+    tweet_text = re.sub(r'(\w+://\S+)', '', tweet_text)
+    # remove those hashtags
+    tweet_text = re.sub(r'(@[A-Za-z0-9_]+)', '', tweet_text)
+    tweet_text = re.sub(r'(#[A-Za-z0-9]+)|([^0-9A-Za-z\s])', '', tweet_text)
+    # remove key words that don't help any
+    tweet_text = tweet_text.replace('\n', '').replace('\r', '')
+    tweet_text = tweet_text.replace('RT', '')
+    tweet_text = tweet_text.replace(':(', '')
+    tweet_text = tweet_text.replace('=(', '')
+    tweet_text = tweet_text.replace(':o(', '')
+    tweet_text = tweet_text.replace(':-(', '')
+    tweet_text = re.sub(r'\s{2,}', ' ', tweet_text)  # remove any extra spaces
+    tweet_text = tweet_text.lower().strip()
+
+    tweet_text = slash_stop_words(tweet_text)# remove stop words
+    return tweet_text
+
+def slash_stop_words(tweet_text):
+        tweet_line_clean = ''
+        for word in tweet_text.lower().split():
+            if word not in stop_word_list:
+                tweet_line_clean += word + ' '
+        return tweet_line_clean if tweet_line_clean != '' else ''
+
+# to calculate the class probabilities for the tweets.
+def find_class_probability(current_dict, tweet, original_count):
+    final_probability = 1
+    num_not_in_curr_dict = 0
+    cleaned_tweet = clean_tweet(tweet)
+    word_list = cleaned_tweet.split(' ')
+    if len(word_list)>0:
+        for w in word_list:
+            if w not in current_dict:
+                num_not_in_curr_dict = num_not_in_curr_dict + 1
+
+        if num_not_in_curr_dict == 0:
+            for w in word_list:
+                final_probability = current_dict[w] * final_probability
+        else:
+            new_count = original_count + num_not_in_curr_dict
+            for w in word_list:  # per tweet
+                if w in current_dict:
+                    new_prob_word = (current_dict[w] * original_count) / (new_count)
+                    final_probability = final_probability * new_prob_word
+                    # for each word_list, gra the value from current dictionary and emit
+                else:
+                    temp_probability = float(1) / (new_count)
+                    final_probability = final_probability * temp_probability
+    else:
+        return 0
+    return final_probability
+
+#  This is the final method that gets called
+# to determine the class of the tweet based on the class probabilities
+def determine_pos_neg(combined_prob):
+    positive_prob = float(combined_prob.split(combined_prob_delimiter)[0])
+    neg_prob = float(combined_prob.split(combined_prob_delimiter)[1])
+    if positive_prob > neg_prob:
+        return 1
+    elif positive_prob < neg_prob:
+        return 0
+    return -1  # neither +ve nor -ve
 
 
-def build_word_counts(sc, input_file_path):
-    pos_tweet_file_rdd = sc.textFile(input_file_path.split(":")[0])
-    neg_tweet_file_rdd = sc.textFile(input_file_path.split(":")[1])
-    # make the list unique
-    pos_lines = pos_tweet_file_rdd.collect()
-    pos_tweet_set = set(pos_lines.__iter__())
-    pos_tweet_uniq_list = list(pos_tweet_set.__iter__())
+combined_prob_delimiter = ":::::"
 
-    neg_lines = neg_tweet_file_rdd.collect()
-    neg_tweet_set = set(neg_lines.__iter__())
-    neg_tweet_uniq_list = list(neg_tweet_set.__iter__())
+if __name__ == '__main__':
+    sc = SparkContext(appName="Bayes Classifier")
+    clean_tweet_text_filename = 'trump_stopwordless_tweets.txt'
 
-    # begin word count
-    pos_uniq_tweet_rdd = sc.parallelize(pos_tweet_uniq_list)
-    neg_uniq_tweet_rdd = sc.parallelize(neg_tweet_uniq_list)
-
-    def line_mapper(line):
-        tokens = line.split()
-        word_count_list = []
-        for token in tokens:
-            word_count_list.append((token, 1))
-        return word_count_list
-
-    # word_count_rdd contains <word, count> after the below step is executed
-    pos_word_count_rdd = pos_uniq_tweet_rdd.flatMap(lambda line: line_mapper(line)). \
-        reduceByKey(lambda val1, val2: (val1 + val2), numPartitions=1)
-
-    neg_word_count_rdd = neg_uniq_tweet_rdd.flatMap(lambda line: line_mapper(line)). \
-        reduceByKey(lambda val1, val2: (val1 + val2), numPartitions=1)
-
-    return [pos_word_count_rdd, neg_word_count_rdd]
-    # pos_word_count_rdd.saveAsPickleFile(output_file_path.split(":")[0])
-    # neg_word_count_rdd.saveAsPickleFile(output_file_path.split(":")[1])
-    # word_count_rdd.saveAsHadoopFile(output_file_path, 'org.apache.hadoop.mapred.TextOutputFormat')
-
-
-hadoop_keyvalue_format = 'org.apache.hadoop.io.Text'
-hadoop_valuevalue_format = 'org.apache.hadoop.io.IntWritable'
-hadoop_textinput_format = 'org.apache.hadoop.mapred.TextInputFormat'
-
-
-def compute_bayes_probabilities(sc, rdd_list):
-    # pos_wordct_rdd = sc.pickleFile(input_file_path.split(":")[0])#, hadoop_textinput_format,
-    # hadoop_keyvalue_format, hadoop_valuevalue_format)
-    pos_wordct_rdd = rdd_list[0]
-    # neg_wordct_rdd = sc.pickleFile(input_file_path.split(":")[1])#, hadoop_textinput_format,
-    # hadoop_keyvalue_format, hadoop_valuevalue_format)
-    neg_wordct_rdd = rdd_list[1]
-    # print "FIRST ELEMEMTN IS .........." + str(pos_wordct_rdd.first())
-    # print "TYPE ELEMEMTN IS .........." + str(type(pos_wordct_rdd.first()))
-    neg_zeroed_rdd = neg_wordct_rdd.mapValues(lambda val: 0)
-    pos_zeroed_rdd = pos_wordct_rdd.mapValues(lambda val: 0)
-    print
-    "NEGATIVE FIRST  ZEROED %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" + str(neg_zeroed_rdd.first())
-    # Append pos and neg word lists with their counterparts' "zeroed" values
-    pos_unioned_rdd = sc.union([pos_wordct_rdd, neg_zeroed_rdd])
-    neg_unioned_rdd = sc.union([neg_wordct_rdd, pos_zeroed_rdd])
-    print
-    "NEGATIVE FIRST UNIONED %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" + str(neg_unioned_rdd.first())
-
-    # Throw away any word same as the one in the main word list. The counterpart words have a 0 as the count
-    # so reducing is gonna combine the two keys to the effect of "throwing" away duplicates
-    pos_uniq_combined_rdd = pos_unioned_rdd.reduceByKey(lambda a, b: a + b, numPartitions=1)
-    neg_uniq_combined_rdd = neg_unioned_rdd.reduceByKey(lambda a, b: a + b, numPartitions=1)
-    print
-    "NEGATIVE FIRST SMOOTHED %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%" + str(neg_uniq_combined_rdd.first())
-
-    # increment the combined lists by 1 to support smoothing of naive Bayes
-    inc_smooth_pos_rdd = pos_uniq_combined_rdd.mapValues(lambda val: val + 1)
-    inc_smooth_neg_rdd = neg_uniq_combined_rdd.mapValues(lambda val: val + 1)
-
-    # get the total counts for each list to use in calculating the probabilities in naive bayes
-    count_negative = inc_smooth_neg_rdd.map(lambda val: ('Key', val[1])).reduceByKey(lambda a, b: a + b).collect()[0]
-    count_positive = inc_smooth_pos_rdd.map(lambda val: ('Key', val[1])).reduceByKey(lambda a, b: a + b).collect()[0]
-
-    # create the naive bays probability values for each term in the list
-    naive_bayes_neg = inc_smooth_neg_rdd.mapValues(lambda val: float(val) / count_negative[1])
-    naive_bayes_pos = inc_smooth_pos_rdd.mapValues(lambda val: float(val) / count_positive[1])
-
-    # naive_bayes_pos.saveAsTextFile(output_file_path.split(":")[0])  # , 'org.apache.hadoop.mapred.TextOutputFormat')
-    # naive_bayes_neg.saveAsTextFile(output_file_path.split(":")[1])  # , 'org.apache.hadoop.mapred.TextOutputFormat')
-    return [count_positive, count_negative, naive_bayes_pos, naive_bayes_neg]
-
-
-if __name__ == "__main__":
-    input_file_path = "input/project/negative_bare_tweets.txt"
-    output_file_path = "output/project/word_count_op/neg_output"
+    # call the
     input_file_path = sys.argv[1]
-    output_file_path = sys.argv[2]
-    sc = SparkContext(appName="TweetAggregator")
-    rdd_list = build_word_counts(sc,input_file_path)
-    compute_bayes_probabilities(sc, rdd_list)
+    input_tweet_file = sys.argv[2]
+    output_file_path = sys.argv[3]
+    # Build the words, totalcounts and then their bayes probabilities
+    rdd_list = build_word_counts(sc, input_file_path)
+    pos_neg_naive_probs_rdd_list = compute_bayes_probabilities(sc, rdd_list)
+
+    pos_orig_count = pos_neg_naive_probs_rdd_list[0][1]
+    neg_orig_count = pos_neg_naive_probs_rdd_list[1][1]
+    # Get the positive and negative word probabilities calculated from the input training set
+    pos_dict = pos_neg_naive_probs_rdd_list[2].collectAsMap()
+    neg_dict = pos_neg_naive_probs_rdd_list[3].collectAsMap()
+    print "%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% BAYES PROBABILITIES COLLECTED AS MAPS %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%"
+
+    # Load the test set
+    trump_tweets_rdd = sc.textFile(input_tweet_file)
+
+    # find the class probabilties for negative and positive classes using the trained probabilities
+    pos_tweet_probabilites_rdd = trump_tweets_rdd.map(
+        lambda line: (line, find_class_probability(pos_dict, line, pos_orig_count)))
+
+    neg_tweet_probabilites_rdd = trump_tweets_rdd.map(
+        lambda line: (line, find_class_probability(neg_dict, line, neg_orig_count)))
+    print "%%%%%%%%%%%%TWEET PROBAB %%%%%%%%%%%%" + str(pos_tweet_probabilites_rdd.take(5))
+
+    # combine probabilities from both the classes and reduceByKey to obtain both probs side by side for comparison
+    both_pos_neg_probs = pos_tweet_probabilites_rdd.union(neg_tweet_probabilites_rdd)
+    combined_probs_rdd = both_pos_neg_probs.reduceByKey(lambda a, b: str(a) + combined_prob_delimiter + str(b))
+
+    print "%%%%%%%%%%%%COMBINED PROBAB %%%%%%%%%%%%" + str(combined_probs_rdd.take(5))
+
+    # Determine the class of the tweet (0 for negative, 1 for positive and -1 for neutral) by comparing the two
+    # class probabilties calculated from before and save as a text file to HDFS
+    combined_probs_rdd.map(lambda tuple: (tuple[0], determine_pos_neg(tuple[1]))) \
+        .saveAsTextFile(output_file_path)
+
     sc.stop()

@@ -203,11 +203,11 @@ if __name__ == '__main__':
     beta = np.ones((total_tweet_words_bcast.value, 1))
     while j < total_tweet_words_bcast.value:
         m = 0, yhb = 0
-        minusBetatran_X =
+        minusBetatran_X = 0
         yhb = 1/(1+math.exp(minusBetatran_X))
         while m< total_tweets_bcast:
-            yhb =
-        beta[j] = beta[j] + aplha ()
+            # yhb =
+        beta[j] = beta[j] + alpha ()
 
     total_tweets_bcast.unpersist()
     word_index_dict_bcast.unpersist()
